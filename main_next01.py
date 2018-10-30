@@ -6,7 +6,7 @@ from multiprocessing import Pool
 import cProfile
 from ray import Ray
 from vec3 import Vec3
-from hitable import Hitable, HitableList, Sphere, MovingSphere, XYRect, XZRect, YZRect, FlipNormals, Box, Translate, RotateY
+from hitable import Hitable, HitableList, Sphere, MovingSphere, XYRect, XZRect, YZRect, FlipNormals, Box, Translate, RotateY, ConstantMedium
 from camera import Camera, FOVCamera, PosCamera, DofCamera, MoBlurCamera
 from material import Lambertian, Metal, Dielectric, DiffuseLight
 from texture import ConstantTexture, CheckerTexture, NoiseTexture
@@ -81,7 +81,7 @@ def cornell_box():
     white = Lambertian(ConstantTexture(Vec3(0.73, 0.73, 0.73)))
     green = Lambertian(ConstantTexture(Vec3(0.12, 0.45, 0.15)))
     light = DiffuseLight(ConstantTexture(Vec3(15, 15, 15)))
-    gray = ConstantTexture(Vec3(0.35, 0.35, 0.35))
+    #gray = ConstantTexture(Vec3(0.35, 0.35, 0.35))
     hit_list.append(FlipNormals(YZRect(0, 555, 0, 555, 555, green)))
     hit_list.append(YZRect(0, 555, 0, 555, 0, red))
     hit_list.append(XZRect(213, 343, 227, 332, 554, light))
@@ -91,34 +91,33 @@ def cornell_box():
     #hit_list.append(Sphere(Vec3(200, 100, 250), 100, Lambertian(gray)))
     #hit_list.append(Sphere(Vec3(200, 100, 200), 100, Dielectric(1.5)))
     #hit_list.append(Sphere(Vec3(200, 100, 280), 100, Metal(gray, 0)))
-    hit_list.append(Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 330, 165), white)), 15), Vec3(265, 0, 295)))
     hit_list.append(Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 165, 165), white)), -18), Vec3(130, 0, 65)))
-    #hit_list.append(Translate(Box(Vec3(0, 0, 0), Vec3(165, 165, 165), white), Vec3(130, 0, 65)))
-    #hit_list.append(Translate(Box(Vec3(0, 0, 0), Vec3(165, 330, 165), white), Vec3(265, 0, 295)))
+    hit_list.append(Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 330, 165), white)), 15), Vec3(265, 0, 295)))
     return hit_list
 
-##def color(ray, world, depth):
-##    rec = world.hit(ray, 0.001, sys.float_info.max)
-##    
-##    if rec:
-##        if depth < 5:
-##            scatter_rec = rec.material.scatter(ray, rec)
-##            if scatter_rec:
-##                return scatter_rec.attenuation * color(scatter_rec.scattered, world, depth+1)
-##            else:
-##                return Vec3()
-##        else:
-##            return Vec3()
-##    unit_direction = ray.direction.unit()
-##    t = 0.5 * (unit_direction.y + 1)
-##    return (1-t)*Vec3(1, 1, 1) + t*Vec3(0.5, 0.7, 1.0)
+def cornell_smoke():
+    hit_list = HitableList()
+    red = Lambertian(ConstantTexture(Vec3(0.65, 0.05, 0.05)))
+    white = Lambertian(ConstantTexture(Vec3(0.73, 0.73, 0.73)))
+    green = Lambertian(ConstantTexture(Vec3(0.12, 0.45, 0.15)))
+    light = DiffuseLight(ConstantTexture(Vec3(7, 7, 7)))
+    gray = ConstantTexture(Vec3(0.35, 0.35, 0.35))
+    hit_list.append(FlipNormals(YZRect(0, 555, 0, 555, 555, green)))
+    hit_list.append(YZRect(0, 555, 0, 555, 0, red))
+    hit_list.append(XZRect(113, 443, 127, 432, 554, light))
+    hit_list.append(FlipNormals(XZRect(0, 555, 0, 555, 555, white)))
+    hit_list.append(XZRect(0, 555, 0, 555, 0, white))
+    hit_list.append(FlipNormals(XYRect(0, 555, 0, 555, 555, white)))
+    b1 = Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 165, 165), white)), -18), Vec3(130, 0, 65))
+    b2 = Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 330, 165), white)), 15), Vec3(265, 0, 295))
+    hit_list.append(ConstantMedium(b1, 0.01, ConstantTexture(Vec3(1, 1, 1))))
+    hit_list.append(ConstantMedium(b2, 0.01, ConstantTexture(Vec3(0, 0, 0))))
+    return hit_list
 
 def color(ray, world, depth):
     rec = world.hit(ray, 0.001, sys.float_info.max)
-    #print(rec)
     if rec:
         emitted = rec.material.emitted(rec.u, rec.v, rec.p)
-        #emitted = Vec3(1, 1, 1)
         if depth < 6:
             scatter_rec = rec.material.scatter(ray, rec)
             if scatter_rec:
@@ -129,18 +128,19 @@ def color(ray, world, depth):
             return Vec3(0, 0, 0)
     #unit_direction = ray.direction.unit()
     #t = 0.5 * (unit_direction.y + 1)
+    #return (1-t)*Vec3(1, 1, 1) + t*Vec3(0.5, 0.7, 1.0)
     return Vec3(0, 0, 0)
 
 # width
-nx = 200
+nx = 500
 # height
-ny = 100
+ny = 500
 # samples
 ns = 20
 # cpu threads
 threads = 15
 # filename
-name = 'rotation1.ppm'
+name = 'smoke1.ppm'
 # total pixels
 pixels=nx*ny
 #tile size y
@@ -202,7 +202,7 @@ def render_loop(start):
                 r= cam.get_ray(u, v)
                 c += color(r, world, 0)
             c /= ns
-            c = Vec3(c.x**0.5, c.y**0.5, c.z**0.5)
+            c = Vec3(math.sqrt(c.x), math.sqrt(c.y), math.sqrt(c.z))
             local_col.append(c)
     return local_col
 
@@ -210,6 +210,7 @@ print("Hitable Objects: {}".format(len(world)))
 print("Total Tiles: {}".format(tiles_y))
 
 if __name__ == '__main__':
+    random.seed(14)
     start = time()
     with Pool(threads) as p:
         col.extend(p.map(render_loop, y_tile_list))

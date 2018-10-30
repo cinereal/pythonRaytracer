@@ -37,6 +37,7 @@ class Perlin:
         return trilinear_interp(c, u, v, w)
         #return ranfloat[perm_x[i] ^ perm_y[j] ^ perm_z[k]]
 
+#@staticmethod
 def perlin_generate():
     p = []
     for i in range(256):
@@ -52,6 +53,7 @@ def permute(p, n):
         p[target] = tmp
     return p
 
+#@staticmethod
 def perlin_generate_perm():
     p = []
     for i in range(256):
