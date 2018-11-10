@@ -4,7 +4,7 @@ from ray import Ray
 from vec3 import Vec3
 from aabb import AABB
 from collections import namedtuple
-from math import sqrt, atan2, asin, pi, sin, cos, log
+from math import sqrt, atan2, asin, pi, sin, cos, log, fabs
 from material import Isotropic
 
 # to compare performance class vs namedtuple
@@ -31,6 +31,10 @@ class Hitable:
         raise NotImplementedError()
     def bounding_box(self, t0, t1):
         raise NotImplementedError()
+    def pdf_value(self, o, v):
+        return 0
+    def random(self, o):
+        return Vec3(1, 0, 0)
 
 class HitableList(list, Hitable):
     def __init__(list):
@@ -199,6 +203,19 @@ class XZRect(Hitable):
     def bounding_box(self, t0, t1, box):
         box = AABB(Vec3(x0, k-0.0001, z0), Vec3(x1, k+0.0001, z1))
         return True
+
+    def pdf_value(self, o, v):
+        rec = self.hit(Ray(o, v), 0.001, sys.float_info.max)
+        if rec:
+            area = (self.x1-self.x0)*(self.z1-self.z0)
+            distance_squared = rec.t * rec.t * v.squared_length()
+            cosine = fabs(v.dot(rec.normal) / v.length())
+            return distance_squared / (cosine * area)
+        return 0
+
+    def random(self, o):
+        random_point = Vec3(self.x0 + random.random() * (self.x1-self.x0), self.k, self.z0 + random.random() * (self.z1-self.z0))
+        return random_point - o
 
 class YZRect(Hitable):
     def __init__(self, y0, y1, z0, z1, k, material=None):

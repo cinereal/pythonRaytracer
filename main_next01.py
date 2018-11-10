@@ -10,6 +10,7 @@ from hitable import Hitable, HitableList, Sphere, MovingSphere, XYRect, XZRect, 
 from camera import Camera, FOVCamera, PosCamera, DofCamera, MoBlurCamera
 from material import Lambertian, Metal, Dielectric, DiffuseLight
 from texture import ConstantTexture, CheckerTexture, NoiseTexture
+from pdf import PDF, CosinePDF, HitablePDF, MixturePDF
 
 #local_random = random.Random()
 #local_random.seed(14)
@@ -84,7 +85,7 @@ def cornell_box():
     #gray = ConstantTexture(Vec3(0.35, 0.35, 0.35))
     hit_list.append(FlipNormals(YZRect(0, 555, 0, 555, 555, green)))
     hit_list.append(YZRect(0, 555, 0, 555, 0, red))
-    hit_list.append(XZRect(213, 343, 227, 332, 554, light))
+    hit_list.append(FlipNormals(XZRect(213, 343, 227, 332, 554, light)))
     hit_list.append(FlipNormals(XZRect(0, 555, 0, 555, 555, white)))
     hit_list.append(XZRect(0, 555, 0, 555, 0, white))
     hit_list.append(FlipNormals(XYRect(0, 555, 0, 555, 555, white)))
@@ -100,7 +101,7 @@ def cornell_smoke():
     red = Lambertian(ConstantTexture(Vec3(0.65, 0.05, 0.05)))
     white = Lambertian(ConstantTexture(Vec3(0.73, 0.73, 0.73)))
     green = Lambertian(ConstantTexture(Vec3(0.12, 0.45, 0.15)))
-    light = DiffuseLight(ConstantTexture(Vec3(7, 7, 7)))
+    light = DiffuseLight(ConstantTexture(Vec3(15, 15, 15)))
     gray = ConstantTexture(Vec3(0.35, 0.35, 0.35))
     hit_list.append(FlipNormals(YZRect(0, 555, 0, 555, 555, green)))
     hit_list.append(YZRect(0, 555, 0, 555, 0, red))
@@ -114,21 +115,70 @@ def cornell_smoke():
     hit_list.append(ConstantMedium(b2, 0.01, ConstantTexture(Vec3(0, 0, 0))))
     return hit_list
 
+##def color(ray, world, depth):
+##    rec = world.hit(ray, 0.001, sys.float_info.max)
+##    if rec:
+##        emitted = rec.material.emitted(rec.u, rec.v, rec.p)
+##        scattered = Ray(rec.p, Vec3(0,0,0), ray.time)
+##        pdf = 1.0
+##        albedo = Vec3()
+##        if depth < 8:
+##            scatter_rec = rec.material.scatter(ray, rec, albedo, scattered, pdf)
+##            if scatter_rec:
+##                return emitted +  rec.material.scattering_pdf(ray, rec, scatter_rec.scattered) * scatter_rec.attenuation * color(scatter_rec.scattered, world, depth+1) / pdf
+##            else:
+##                return emitted
+##        else:
+##            return Vec3(0, 0, 0)
+##    #unit_direction = ray.direction.unit()
+##    #t = 0.5 * (unit_direction.y + 1)
+##    #return (1-t)*Vec3(1, 1, 1) + t*Vec3(0.5, 0.7, 1.0)
+##    return Vec3(0, 0, 0)
+
+##def color(ray, world, depth):
+##    rec = world.hit(ray, 0.001, sys.float_info.max)
+##    if rec:
+##        emitted = rec.material.emitted(ray, rec, rec.u, rec.v, rec.p)
+##        scattered = None
+##        pdf = 1
+##        albedo = Vec3()
+##        scatter_rec = rec.material.scatter(ray, rec, albedo, scattered, pdf)
+##        if depth < 8 and scatter_rec:
+##            on_light = Vec3(213 + random.random() * (343-213), 554, 227 + random.random() * (332-227))
+##            to_light = on_light - rec.p
+##            distance_squared = to_light.squared_length()
+##            to_light.unit()
+##            if to_light.dot(rec.normal) < 0:
+##                return emitted
+##            light_area = (343-213) * (332-227)
+##            light_cosine = math.fabs(to_light.y)
+##            if light_cosine < 0.000001:
+##                return emitted
+##            pdf = distance_squared / (light_cosine * light_area)
+##            scattered = Ray(rec.p, to_light, ray.time)
+##            return emitted + rec.material.scattering_pdf(ray, rec, scattered) * (0.01*scatter_rec.attenuation) * color(scattered, world, depth+1) / pdf
+##        else:
+##            return emitted
+##    return Vec3(0, 0, 0)
+
 def color(ray, world, depth):
     rec = world.hit(ray, 0.001, sys.float_info.max)
     if rec:
-        emitted = rec.material.emitted(rec.u, rec.v, rec.p)
-        if depth < 6:
-            scatter_rec = rec.material.scatter(ray, rec)
-            if scatter_rec:
-                return emitted + scatter_rec.attenuation * color(scatter_rec.scattered, world, depth+1)
-            else:
-                return emitted
+        emitted = rec.material.emitted(ray, rec, rec.u, rec.v, rec.p)
+        scattered = None
+        pdf_val = 1
+        albedo = Vec3()
+        scatter_rec = rec.material.scatter(ray, rec, albedo, scattered, pdf_val)
+        if depth < 8 and scatter_rec:
+            light_shape = XZRect(213, 343, 227, 332, 554, 0)
+            p0 = HitablePDF(light_shape, rec.p)
+            p1 = CosinePDF(rec.normal)
+            p = MixturePDF(p0, p1)
+            scattered = Ray(rec.p, p.generate(), ray.time)
+            pdf_val = p.value(scattered.direction)
+            return emitted + rec.material.scattering_pdf(ray, rec, scattered) * scatter_rec.attenuation * color(scattered, world, depth+1) / pdf_val
         else:
-            return Vec3(0, 0, 0)
-    #unit_direction = ray.direction.unit()
-    #t = 0.5 * (unit_direction.y + 1)
-    #return (1-t)*Vec3(1, 1, 1) + t*Vec3(0.5, 0.7, 1.0)
+            return emitted
     return Vec3(0, 0, 0)
 
 # width
@@ -136,11 +186,11 @@ nx = 500
 # height
 ny = 500
 # samples
-ns = 20
+ns = 200
 # cpu threads
 threads = 15
 # filename
-name = 'smoke1.ppm'
+name = 'pdf1.ppm'
 # total pixels
 pixels=nx*ny
 #tile size y
