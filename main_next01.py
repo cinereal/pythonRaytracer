@@ -8,12 +8,22 @@ from ray import Ray
 from vec3 import Vec3
 from hitable import Hitable, HitableList, Sphere, MovingSphere, XYRect, XZRect, YZRect, FlipNormals, Box, Translate, RotateY, ConstantMedium
 from camera import Camera, FOVCamera, PosCamera, DofCamera, MoBlurCamera
-from material import Lambertian, Metal, Dielectric, DiffuseLight
+from material import Lambertian, Metal, Dielectric, DiffuseLight, ScatterRecord
 from texture import ConstantTexture, CheckerTexture, NoiseTexture
 from pdf import PDF, CosinePDF, HitablePDF, MixturePDF
 
 #local_random = random.Random()
 #local_random.seed(14)
+
+def de_nan(c):
+    temp = c
+    if math.isnan(c.x):
+        temp.x = 0
+    if math.isnan(c.y):
+        temp.y = 0
+    if math.isnan(c.z):
+        temp.z = 0
+    return temp
 
 def float_to_int8(value):
     return min(max(int(value * 255), 0), 255)
@@ -77,7 +87,7 @@ def simple_light():
     return hit_list
 
 def cornell_box():
-    hit_list = HitableList()
+    hit_list = []
     red = Lambertian(ConstantTexture(Vec3(0.65, 0.05, 0.05)))
     white = Lambertian(ConstantTexture(Vec3(0.73, 0.73, 0.73)))
     green = Lambertian(ConstantTexture(Vec3(0.12, 0.45, 0.15)))
@@ -92,9 +102,14 @@ def cornell_box():
     #hit_list.append(Sphere(Vec3(200, 100, 250), 100, Lambertian(gray)))
     #hit_list.append(Sphere(Vec3(200, 100, 200), 100, Dielectric(1.5)))
     #hit_list.append(Sphere(Vec3(200, 100, 280), 100, Metal(gray, 0)))
-    hit_list.append(Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 165, 165), white)), -18), Vec3(130, 0, 65)))
+    #hit_list.append(Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 165, 165), white)), -18), Vec3(130, 0, 65)))
+    #aluminum = Metal(Vec3(0.8, 0.55, 0.88), 0.0)
+    aluminum = Metal(Vec3(0.7, 0.7, 0.7), 0.0)
+    #hit_list.append(Sphere(Vec3(360, 90, 320), 90, white))
     hit_list.append(Translate(RotateY((Box(Vec3(0, 0, 0), Vec3(165, 330, 165), white)), 15), Vec3(265, 0, 295)))
-    return hit_list
+    hit_list.append(Sphere(Vec3(190, 90, 190), 90, Dielectric(1.5)))
+    #hit_list.append(Sphere(Vec3(180, 130, 180), 130, Dielectric(1.5)))
+    return HitableList(hit_list)
 
 def cornell_smoke():
     hit_list = HitableList()
@@ -161,36 +176,35 @@ def cornell_smoke():
 ##            return emitted
 ##    return Vec3(0, 0, 0)
 
-def color(ray, world, depth):
-    rec = world.hit(ray, 0.001, sys.float_info.max)
-    if rec:
-        emitted = rec.material.emitted(ray, rec, rec.u, rec.v, rec.p)
-        scattered = None
-        pdf_val = 1
-        albedo = Vec3()
-        scatter_rec = rec.material.scatter(ray, rec, albedo, scattered, pdf_val)
-        if depth < 8 and scatter_rec:
-            light_shape = XZRect(213, 343, 227, 332, 554, 0)
-            p0 = HitablePDF(light_shape, rec.p)
-            p1 = CosinePDF(rec.normal)
-            p = MixturePDF(p0, p1)
-            scattered = Ray(rec.p, p.generate(), ray.time)
+def color(ray, world, light_shape, depth):
+    hrec = world.hit(ray, 0.001, sys.float_info.max)
+    if hrec:
+        emitted = hrec.material.emitted(ray, hrec, hrec.u, hrec.v, hrec.p)
+        srec = hrec.material.scatter(ray, hrec)
+        if depth < 8 and srec:
+            if srec.is_specular:
+                return srec.attenuation * color(srec.specular_ray, world, light_shape, depth+1)
+            plight = HitablePDF(light_shape, hrec.p)
+            p = MixturePDF(plight, srec.pdf_ptr)
+            scattered = Ray(hrec.p, p.generate(), ray.time)
             pdf_val = p.value(scattered.direction)
-            return emitted + rec.material.scattering_pdf(ray, rec, scattered) * scatter_rec.attenuation * color(scattered, world, depth+1) / pdf_val
+            if pdf_val == 0:
+                pdf_val += 0.0001
+            return emitted + hrec.material.scattering_pdf(ray, hrec, scattered) * srec.attenuation * color(scattered, world, light_shape, depth+1) / pdf_val
         else:
             return emitted
     return Vec3(0, 0, 0)
 
 # width
-nx = 500
+nx = 200
 # height
-ny = 500
+ny = 200
 # samples
-ns = 200
+ns = 20
 # cpu threads
 threads = 15
 # filename
-name = 'pdf1.ppm'
+name = 'pdf4.ppm'
 # total pixels
 pixels=nx*ny
 #tile size y
@@ -239,6 +253,12 @@ vfov = 40
 
 cam = MoBlurCamera(lookfrom, lookat, Vec3(0,1,0), vfov, nx/ny, aperture, dist_to_focus, 0, 1)
 
+h_list = []
+h_list.append(XZRect(213, 343, 227, 332, 554, 0))
+h_list.append(Sphere(Vec3(190, 90, 190), 90, 0))
+#h_list.append(Sphere(Vec3(180, 130, 180), 130, 0))
+hlist = HitableList(h_list)
+
 col = []
     
 def render_loop(start):
@@ -250,13 +270,13 @@ def render_loop(start):
                 u = (x + random.random()) / nx
                 v = (y + random.random()) / ny
                 r= cam.get_ray(u, v)
-                c += color(r, world, 0)
+                c += de_nan(color(r, world, hlist, 0))
             c /= ns
             c = Vec3(math.sqrt(c.x), math.sqrt(c.y), math.sqrt(c.z))
             local_col.append(c)
     return local_col
 
-print("Hitable Objects: {}".format(len(world)))
+#print("Hitable Objects: {}".format(len(world)))
 print("Total Tiles: {}".format(tiles_y))
 
 if __name__ == '__main__':

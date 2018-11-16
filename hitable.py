@@ -3,6 +3,8 @@ import sys
 from ray import Ray
 from vec3 import Vec3
 from aabb import AABB
+from onb import ONB
+from pdf import random_to_sphere
 from collections import namedtuple
 from math import sqrt, atan2, asin, pi, sin, cos, log, fabs
 from material import Isotropic
@@ -36,14 +38,15 @@ class Hitable:
     def random(self, o):
         return Vec3(1, 0, 0)
 
-class HitableList(list, Hitable):
-    def __init__(list):
-        hit_list = []
+class HitableList(Hitable):
+    def __init__(self, hit_list):
+        self.hit_list = hit_list
+        self.list_size = len(self.hit_list)
 
     def hit(self, ray, t_min, t_max):
         hit_anything = False
         closest_so_far = t_max
-        for obj in self:
+        for obj in self.hit_list:
             hit_info = obj.hit(ray, t_min, closest_so_far)
             if hit_info:
                 hit_anything = True
@@ -51,7 +54,21 @@ class HitableList(list, Hitable):
                 result_info = hit_info
         if hit_anything:
             return result_info
-        return None
+        return False
+
+    def bounding_box(self, t0, t1):
+        raise NotImplementedError()
+    
+    def pdf_value(self, o, v):
+        weight = 1 / self.list_size
+        sum = 0
+        for i in range(self.list_size):
+            sum += weight * self.hit_list[i].pdf_value(o, v)
+        return sum
+    
+    def random(self, o):
+        index = int(random.random() * self.list_size)
+        return self.hit_list[index].random(o)
 
 ##    def bounding_box(self, t0, t1, box):
 ##        temp_box = AABB()
@@ -254,14 +271,14 @@ class Box(Hitable):
         return self.box().hit(ray, t_min, t_max)
 
     def box(self):
-        hit_list = HitableList()
+        hit_list = []
         hit_list.append(XYRect(self.p0.x, self.p1.x, self.p0.y, self.p1.y, self.p1.z, self.ptr))
         hit_list.append(FlipNormals(XYRect(self.p0.x, self.p1.x, self.p0.y, self.p1.y, self.p0.z, self.ptr)))
         hit_list.append(XZRect(self.p0.x, self.p1.x, self.p0.z, self.p1.z, self.p1.y, self.ptr))
         hit_list.append(FlipNormals(XZRect(self.p0.x, self.p1.x, self.p0.z, self.p1.z, self.p0.y, self.ptr)))
         hit_list.append(YZRect(self.p0.y, self.p1.y, self.p0.z, self.p1.z, self.p1.x, self.ptr))
         hit_list.append(FlipNormals(YZRect(self.p0.y, self.p1.y, self.p0.z, self.p1.z, self.p0.x, self.ptr)))
-        return hit_list
+        return HitableList(hit_list)
         
     def bounding_box(self, t0, t1, box):
         box = AABB(self.pmin, self.pmax)
@@ -277,23 +294,23 @@ class Sphere(Hitable):
     def hit(self, ray, t_min, t_max):
         oc = ray.origin - self.center
         a = ray.direction.dot(ray.direction)
-        b = 2 * oc.dot(ray.direction)
+        b = oc.dot(ray.direction)
         c = oc.dot(oc) - self.radius*self.radius
-        discriminant = b*b - 4*a*c
+        discriminant = b*b - a*c
         if discriminant > 0:
             dis_sqrt = sqrt(discriminant)
-            temp = (-b - dis_sqrt) / (2*a)
-            if(t_min < temp < t_max):
-                t = temp
-                p = ray.point_at_parameter(t)
-                u,v = get_sphere_uv((p-self.center)/self.radius)
-                normal = (p - self.center) / self.radius
-                return HitRecord(t, u, v, p, normal, self.material)
-            temp = (-b + dis_sqrt) / (2*a)
+            temp = (-b - dis_sqrt) / a
             if t_min < temp < t_max:
                 t = temp
                 p = ray.point_at_parameter(t)
-                u,v = get_sphere_uv((p-self.center)/self.radius, u, v)
+                u, v = get_sphere_uv((p-self.center)/self.radius)
+                normal = (p - self.center) / self.radius
+                return HitRecord(t, u, v, p, normal, self.material)
+            temp = (-b + dis_sqrt) / a
+            if t_min < temp < t_max:
+                t = temp
+                p = ray.point_at_parameter(t)
+                u, v = get_sphere_uv((p-self.center)/self.radius)
                 normal = (p - self.center) / self.radius
                 return HitRecord(t, u, v, p, normal, self.material)
         return False
@@ -301,6 +318,21 @@ class Sphere(Hitable):
     def bounding_box(self, t0, t1, box):
         box = AABB(self.center - Vec3(self.radius, self.radius, self.radius), self.center + Vec3(self.radius, self.radius, self.radius))
         return True
+
+    def pdf_value(self, o, v):
+        rec = self.hit(Ray(o, v), 0.001, sys.float_info.max)
+        if rec:
+            cos_theta_max = sqrt(1 - self.radius * self.radius / (self.center - o).squared_length())
+            solid_angle = 2 * pi * (1 - cos_theta_max)
+            return 1 / solid_angle
+        return 0
+
+    def random(self, o):
+        direction = self.center - o
+        distant_squared = direction.squared_length()
+        uvw = ONB()
+        uvw.build_from_w(direction)
+        return uvw.local(random_to_sphere(self.radius, distant_squared))
         
 
 class MovingSphere(Hitable):
