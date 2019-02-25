@@ -14,3 +14,5 @@ this might give you an easier start than the C++ version in the book.
 The code includes multiprocessing currently hardcoded to my 16 threads machine.
 
 To start the renderer you have to run main_next01.py
+
+![Test Render](https://github.com/cinereal/pythonRaytracer/pdf3a.jpg)
