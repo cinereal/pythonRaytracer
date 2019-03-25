@@ -11,7 +11,7 @@ Instead of C++ I used Python3. Of course it's incredible slow but it's just for 
 If you are a TD or Lighting Artist with familiar with Python but not C++, 
 this might give you an easier start than the C++ version in the book.
 
-The code includes multiprocessing currently hardcoded to my 16 threads machine.
+The code includes multiprocessing using max threads minus one. If you use a single core machine you have to change this.
 
 To start the renderer you have to run main_next01.py
 
